@@ -242,14 +242,48 @@ python3 bravia_harden.py lockdown --apply
 
 Deine Haupt-Ziele für „alte Programme runter" sind die `optional`-Apps.
 
-## Tests
+## Analyse & Priorisierung (`bravia_advisor.py`)
 
-Die Logik (Klassifizierung, Sperrliste, Empfehlungen, Dry-run/Apply) ist ohne
-echtes Gerät testbar – der ADB-Layer wird gemockt:
+Macht aus den Audit-Daten eine **priorisierte Risiko-Analyse mit
+Hardening-Score (0–100)**. Zwei Modi:
+
+- **Offline-Experten-Engine** (Standard) – regelbasiert, kein Datenabfluss,
+  vollständig getestet. Bewertet Patch-Level, offenes Netzwerk-ADB, Standort,
+  Bluetooth, Telemetrie-Pakete und Bloatware und sortiert die Befunde nach
+  Schwere (critical → info) mit konkreten Handlungsempfehlungen.
+- **Optionaler KI-Modus** (`--ai`) – schickt eine **nicht-identifizierende**
+  Befund-Zusammenfassung (ohne Hostnames/IPs, ohne Fingerprint) an Claude für
+  eine Zweitmeinung. Nur mit `ANTHROPIC_API_KEY` und installiertem
+  `anthropic`-SDK; das Basis-Tool bleibt sonst abhängigkeitsfrei.
 
 ```bash
-python3 test_bravia_harden.py       # stdlib unittest, keine Abhängigkeiten
-# oder: pytest test_bravia_harden.py
+# Live vom Gerät
+python3 bravia_harden.py audit --json | python3 bravia_advisor.py
+
+# Aus einer gespeicherten Audit-Datei
+python3 bravia_harden.py audit --json > report.json
+python3 bravia_advisor.py --file report.json
+
+# Mit KI-Zweitmeinung (optional)
+python3 bravia_advisor.py --file report.json --ai
+
+# Maschinenlesbar
+python3 bravia_advisor.py --file report.json --json
+```
+
+Der **Hardening-Score** startet bei 100 und zieht je Befund nach Schwere ab
+(critical −40, high −25, medium −12, low −5). Beispiel: ein seit Jahren nicht
+aktualisierter TV mit offenem ADB, Telemetrie und aktivem Standort landet
+typisch im kritischen Bereich (< 40).
+
+## Tests
+
+Die Logik ist ohne echtes Gerät testbar – der ADB-Layer wird gemockt:
+
+```bash
+python3 test_bravia_harden.py       # Härtungs-Tool (11 Tests)
+python3 test_bravia_advisor.py      # Advisor-Offline-Engine (8 Tests)
+# oder: pytest
 ```
 
 ## Reversibilität / Notfall
