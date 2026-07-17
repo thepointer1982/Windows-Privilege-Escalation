@@ -150,6 +150,22 @@ ADB-Verbindung.
 | „Treiber ziehen" | Auf SoC-TVs gibt es keine austauschbaren Treiber – kein realer Hebel. |
 | WLAN am Router härten | Das ist Router-Sache. `wlan` liefert dafür eine Checkliste. |
 
+## Ein-Befehl-Bootstrap (zu Hause ausführen)
+
+> **Muss auf einem Rechner im selben Netz wie der TV laufen** (Laptop/PC/Raspberry
+> Pi im Heim-WLAN/LAN) – **nicht** in einer Cloud/CI-Umgebung. Eine ADB-Verbindung
+> zum TV geht nur aus demselben Netz.
+
+```bash
+./connect_and_harden.sh                 # TV automatisch suchen, Dry-run
+./connect_and_harden.sh 192.168.178.42  # feste TV-IP, Dry-run
+./connect_and_harden.sh 192.168.178.42 --apply   # sichere Layer ausführen
+```
+
+Das Skript prüft/erklärt `adb`, findet den TV (oder nimmt die angegebene IP),
+verbindet per ADB und startet den Härtungs-Durchlauf. Details der einzelnen
+Schritte siehe unten.
+
 ## Schnellstart: orchestrierter Durchlauf
 
 Ein Befehl geht alle Schichten der Reihe nach durch (Dry-run als Standard):
