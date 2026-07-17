@@ -54,7 +54,25 @@ ADB-Debugging muss am Zielgerät aktiviert sein:
 Beim ersten `adb connect` erscheint am TV ein Popup **„USB-Debugging zulassen?"** –
 dort bestätigen (RSA-Fingerprint), sonst bleibt die Verbindung `unauthorized`.
 
-## Benutzung
+## PowerShell-Variante (Windows)
+
+Für Windows/PowerShell-Umgebungen gibt es das native Pendant
+`Connect-BraviaTv.ps1` – gleiche Logik (Subnetz-Ermittlung, paralleler Port-/
+Ping-Scan über RunspacePool, Klassifizierung, `adb connect`), aber mit
+`Get-NetIPConfiguration`, `System.Net.Sockets.TcpClient` und
+`System.Net.NetworkInformation.Ping`:
+
+```powershell
+.\Connect-BraviaTv.ps1 diagnose
+.\Connect-BraviaTv.ps1 scan -Subnet 192.168.178.0/24
+.\Connect-BraviaTv.ps1 connect -Ip 192.168.178.42
+.\Connect-BraviaTv.ps1 diagnose -Json > report.json
+```
+
+> Läuft ab Windows PowerShell 5.1 und PowerShell 7+. `adb` muss im PATH sein.
+> Ggf. Ausführungsrichtlinie: `powershell -ExecutionPolicy Bypass -File .\Connect-BraviaTv.ps1 diagnose`.
+
+## Benutzung (Python)
 
 ```bash
 # Kompletter Durchlauf: scannen, klassifizieren, besten Kandidaten verbinden
