@@ -150,7 +150,22 @@ ADB-Verbindung.
 | „Treiber ziehen" | Auf SoC-TVs gibt es keine austauschbaren Treiber – kein realer Hebel. |
 | WLAN am Router härten | Das ist Router-Sache. `wlan` liefert dafür eine Checkliste. |
 
-## Ablauf – Schicht für Schicht
+## Schnellstart: orchestrierter Durchlauf
+
+Ein Befehl geht alle Schichten der Reihe nach durch (Dry-run als Standard):
+
+```bash
+python3 bravia_harden.py run              # zeigt alles, ändert nichts
+python3 bravia_harden.py run --apply      # führt die SICHEREN Layer aus
+```
+
+`run` führt mit `--apply` nur die risikoarmen Layer wirklich aus
+(Telemetrie-Pakete aus, optional Bluetooth). **App-Entfernung** bleibt bewusst
+eine eigene Entscheidung – `run` zeigt dafür nur das fertige
+`apps --uninstall …`-Kommando an. Der finale **Lockdown** (kappt die
+ADB-Verbindung) läuft nur mit `--include-lockdown`.
+
+## Ablauf – Schicht für Schicht (manuell, volle Kontrolle)
 
 ```bash
 # 0. Verbinden (siehe oben)
@@ -160,7 +175,8 @@ python3 firetv_bravia_connect.py connect 192.168.178.42
 python3 bravia_harden.py audit
 
 # 2. Alte/ungenutzte Apps ansehen und entfernen (reversibel, dry-run zuerst)
-python3 bravia_harden.py apps --list
+python3 bravia_harden.py apps --recommend   # kuratierter Entfernen-Vorschlag
+python3 bravia_harden.py apps --list        # alle Kandidaten klassifiziert
 python3 bravia_harden.py apps --uninstall com.netflix.ninja,com.spotify.tv.android
 python3 bravia_harden.py apps --uninstall com.netflix.ninja,com.spotify.tv.android --apply
 #   Zurückholen:
@@ -191,6 +207,16 @@ python3 bravia_harden.py lockdown --apply
 | `telemetry` | Namensmuster deutet auf Tracking/Ads/Analytics – Kandidat zum Abschalten. |
 
 Deine Haupt-Ziele für „alte Programme runter" sind die `optional`-Apps.
+
+## Tests
+
+Die Logik (Klassifizierung, Sperrliste, Empfehlungen, Dry-run/Apply) ist ohne
+echtes Gerät testbar – der ADB-Layer wird gemockt:
+
+```bash
+python3 test_bravia_harden.py       # stdlib unittest, keine Abhängigkeiten
+# oder: pytest test_bravia_harden.py
+```
 
 ## Reversibilität / Notfall
 

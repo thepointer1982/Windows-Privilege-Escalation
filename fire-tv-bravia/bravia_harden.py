@@ -101,6 +101,32 @@ TELEMETRY_KEYWORDS = (
     "sambatv", "samba.", "acr", "usagent", "datacollect",
 )
 
+# Kuratierte Liste: verbreitete, gefahrlos für den Nutzer entfernbare
+# (`pm uninstall --user 0`, reversibel) Android-TV-/Bravia-Extras. Es werden nur
+# solche vorgeschlagen, die auch WIRKLICH installiert sind. Nutzt du eine davon,
+# einfach nicht entfernen bzw. per --restore zurückholen.
+RECOMMENDED_REMOVE = {
+    # Google-Zusatz-Apps (kein System-Kern)
+    "com.google.android.youtube.tvkids",   # YouTube Kids
+    "com.google.android.videos",           # Google TV / Play Filme
+    "com.google.android.music",            # Play Music (tot)
+    "com.google.android.play.games",       # Play Games
+    "com.google.android.apps.mediashell",  # Cast-Receiver-Extras
+    # Vorinstallierte Streaming-Apps (Beispiele – nur wenn ungenutzt)
+    "com.netflix.ninja",
+    "com.amazon.avod",
+    "com.amazon.amazonvideo.livingroom",
+    "com.spotify.tv.android",
+    "com.tubitv",
+    "com.disney.disneyplus",
+    "com.wbd.stream",
+    "com.tcl.tv",
+    "com.rakuten.tv.android",
+    "com.dailymotion.dailymotion",
+    # Sony-Promo/Demo (falls nicht per Sperrliste geschützt)
+    "com.sony.dtv.smarthome",
+}
+
 # --------------------------------------------------------------------------- #
 # Ausgabe-Helfer (Fortschritt nach stderr, Daten nach stdout)
 # --------------------------------------------------------------------------- #
@@ -197,6 +223,19 @@ def shell(serial: str, cmd: str, timeout: float = 20.0) -> str:
 # Geräte- und Paket-Inventur
 # --------------------------------------------------------------------------- #
 
+def ensure_android_tv(serial: str) -> None:
+    """Bricht sauber ab, wenn das Gerät kein Android (TV) ist. Ältere Bravia
+    (vor ~2015) laufen auf Linux/Opera und haben kein `pm`/`getprop`."""
+    sdk = shell(serial, "getprop ro.build.version.sdk", timeout=10).strip()
+    if not sdk.isdigit():
+        raise AdbError(
+            "Gerät antwortet nicht wie ein Android-TV (kein SDK-Level). "
+            "Sehr wahrscheinlich ein Pre-2015-Bravia auf Linux/Opera – dieses "
+            "Tool (ADB/pm) greift dort nicht. Härtung dann nur router-seitig "
+            "möglich (siehe `wlan`)."
+        )
+
+
 def device_info(serial: str) -> dict:
     props = {
         "manufacturer": "ro.product.manufacturer",
@@ -256,8 +295,15 @@ def classify_packages(serial: str) -> list[dict]:
             "category": category,
             "third_party": pkg in third_party,
             "disabled": pkg in disabled,
+            "recommended_remove": pkg in RECOMMENDED_REMOVE and not is_critical(pkg),
         })
     return result
+
+
+def recommended_installed(pkgs: list[dict]) -> list[str]:
+    """Installierte Pakete aus der kuratierten Entfernen-Empfehlung."""
+    return [p["package"] for p in pkgs
+            if p["recommended_remove"] and not p["disabled"]]
 
 
 # --------------------------------------------------------------------------- #
@@ -310,6 +356,7 @@ def apply_action(serial: str, action: str, packages: list[str],
 def cmd_audit(args) -> int:
     serial = resolve_serial(args.serial)
     info(f"Ziel: {serial}")
+    ensure_android_tv(serial)
     dinfo = device_info(serial)
     pkgs = classify_packages(serial)
 
@@ -364,6 +411,26 @@ def cmd_audit(args) -> int:
 
 def cmd_apps(args) -> int:
     serial = resolve_serial(args.serial)
+    ensure_android_tv(serial)
+
+    if args.recommend:
+        pkgs = classify_packages(serial)
+        rec = recommended_installed(pkgs)
+        if args.json:
+            print(json.dumps(rec, indent=2, ensure_ascii=False))
+            return 0
+        if not rec:
+            ok("Keine der kuratierten Bloatware-Apps installiert – sauber.")
+            return 0
+        info(f"Kuratierte Entfernen-Empfehlung ({len(rec)} installiert). "
+             "Nur was du NICHT nutzt entfernen:")
+        for pkg in rec:
+            print(f"  - {pkg}")
+        print()
+        info("Vorschlag (dry-run):  apps --uninstall "
+             + ",".join(rec))
+        info("Ausführen: gleiches Kommando mit --apply anhängen.")
+        return 0
 
     if args.list:
         pkgs = classify_packages(serial)
@@ -376,8 +443,10 @@ def cmd_apps(args) -> int:
         for p in shown:
             state = "deaktiviert" if p["disabled"] else "aktiv"
             mark = "TELEMETRIE" if p["category"] == "telemetry" else "optional "
-            print(f"  [{mark}] {p['package']:45s} ({state})")
+            rec = " *empfohlen entfernbar*" if p["recommended_remove"] else ""
+            print(f"  [{mark}] {p['package']:45s} ({state}){rec}")
         print()
+        info("Empfehlung:              apps --recommend")
         info("Entfernen (reversibel):  apps --uninstall <pkg1,pkg2> --apply")
         info("Deaktivieren:            apps --disable   <pkg1,pkg2> --apply")
         info("Zurückholen:             apps --restore   <pkg> --apply  (oder --enable)")
@@ -396,6 +465,7 @@ def cmd_apps(args) -> int:
 
 def cmd_privacy(args) -> int:
     serial = resolve_serial(args.serial)
+    ensure_android_tv(serial)
     pkgs = classify_packages(serial)
     tele = [p for p in pkgs if p["category"] == "telemetry"]
 
@@ -428,6 +498,7 @@ def cmd_privacy(args) -> int:
 
 def cmd_services(args) -> int:
     serial = resolve_serial(args.serial)
+    ensure_android_tv(serial)
     # svc ist reversibel und ändert keine Paketzustände.
     checks = {
         "Bluetooth (settings global bluetooth_on)":
@@ -460,6 +531,79 @@ def cmd_services(args) -> int:
             ok(f"  {label}")
     if not args.apply:
         warn("Nur Vorschau. Zum Ausführen --apply anhängen.")
+    return 0
+
+
+def cmd_run(args) -> int:
+    """Orchestrierter Schicht-für-Schicht-Durchlauf. Dry-run als Standard.
+
+    Sichere Layer (Telemetrie aus, optional Bluetooth) werden mit --apply
+    tatsächlich ausgeführt. App-Entfernung bleibt bewusst eine bewusste
+    Entscheidung -> es werden nur Empfehlungen und fertige Kommandos angezeigt.
+    Der finale Lockdown (kappt die ADB-Verbindung) läuft nur mit
+    --include-lockdown.
+    """
+    serial = resolve_serial(args.serial)
+    ensure_android_tv(serial)
+    mode = "AUSFÜHREN (--apply)" if args.apply else "DRY-RUN"
+    info(f"Orchestrierter Durchlauf auf {serial}  [{mode}]")
+
+    dinfo = device_info(serial)
+    pkgs = classify_packages(serial)
+
+    print(_c("\n### Schicht 1 – Gerät & Zustand", "1"))
+    for k in ("manufacturer", "model", "android_release", "sdk", "security_patch"):
+        print(f"  {k:18s}: {dinfo.get(k, '')}")
+    patch = dinfo.get("security_patch", "")
+    if patch and patch < "2020":
+        warn(f"Security-Patch {patch} sehr alt – Netzexposition minimieren.")
+
+    print(_c("\n### Schicht 2 – Alte Apps (Entscheidung bei dir)", "1"))
+    rec = recommended_installed(pkgs)
+    optional = [p["package"] for p in pkgs
+                if p["category"] == "optional" and not p["disabled"]]
+    if rec:
+        info(f"Empfohlen entfernbar ({len(rec)}): " + ", ".join(rec))
+        print("  Kommando: apps --uninstall " + ",".join(rec) + " --apply")
+    if optional:
+        info(f"Weitere optionale Apps: {len(optional)} (siehe `apps --list`)")
+    if not rec and not optional:
+        ok("Keine offensichtliche Bloatware installiert.")
+
+    print(_c("\n### Schicht 3 – Telemetrie/Tracking", "1"))
+    tele = [p["package"] for p in pkgs
+            if p["category"] == "telemetry" and not p["disabled"]]
+    if tele:
+        apply_action(serial, "disable", tele, args.apply, force=False)
+    else:
+        ok("Keine verdächtigen Telemetrie-Pakete aktiv.")
+
+    print(_c("\n### Schicht 4 – Funkdienste", "1"))
+    if args.disable_bluetooth:
+        if args.apply:
+            shell(serial, "svc bluetooth disable", timeout=15)
+            ok("Bluetooth deaktiviert.")
+        else:
+            print("  würde ausführen: adb shell svc bluetooth disable")
+    else:
+        info("Bluetooth unangetastet (--disable-bluetooth zum Abschalten). "
+             "Achtung: BT-Fernbedienungen brauchen Bluetooth.")
+
+    print(_c("\n### Schicht 5 – WLAN/Netzwerk (Router)", "1"))
+    cmd_wlan(args)
+
+    print(_c("\n### Schicht 6 – Lockdown (ADB zu)", "1"))
+    if args.include_lockdown:
+        cmd_lockdown(argparse.Namespace(serial=serial, apply=args.apply))
+    else:
+        info("Übersprungen. Wenn fertig: `lockdown --apply` "
+             "(kappt danach diese ADB-Verbindung).")
+
+    print()
+    if not args.apply:
+        warn("Kompletter DRY-RUN. Mit --apply werden die sicheren Layer "
+             "(Telemetrie, optional Bluetooth) real ausgeführt. App-Entfernung "
+             "läuft absichtlich nur über die angezeigten `apps --uninstall`-Kommandos.")
     return 0
 
 
@@ -528,6 +672,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     sp = sub.add_parser("apps", help="Apps auflisten/deaktivieren/entfernen/zurückholen")
     sp.add_argument("--list", action="store_true", help="Kandidaten klassifiziert listen")
+    sp.add_argument("--recommend", action="store_true",
+                    help="Kuratierte Entfernen-Empfehlung (nur installierte)")
     sp.add_argument("--disable", help="Komma-Liste: per Nutzer deaktivieren (reversibel)")
     sp.add_argument("--enable", help="Komma-Liste: wieder aktivieren")
     sp.add_argument("--uninstall", help="Komma-Liste: für Nutzer entfernen (reversibel)")
@@ -550,6 +696,14 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--enable-bluetooth", action="store_true")
     sp.add_argument("--apply", action="store_true")
     sp.set_defaults(func=cmd_services)
+
+    sp = sub.add_parser("run", help="Orchestrierter Schicht-für-Schicht-Durchlauf")
+    sp.add_argument("--apply", action="store_true",
+                    help="Sichere Layer (Telemetrie, opt. Bluetooth) real ausführen")
+    sp.add_argument("--disable-bluetooth", action="store_true")
+    sp.add_argument("--include-lockdown", action="store_true",
+                    help="Am Ende Netzwerk-ADB abschalten (kappt die Verbindung)")
+    sp.set_defaults(func=cmd_run)
 
     sp = sub.add_parser("wlan", help="Router-seitige WLAN-Härtungs-Checkliste")
     sp.set_defaults(func=cmd_wlan)
