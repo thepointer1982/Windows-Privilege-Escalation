@@ -118,3 +118,84 @@ python3 firetv_bravia_connect.py diagnose --json > report.json
 - Ein WLAN mit **Client-Isolation / AP-Isolation** blockiert die Verbindung
   zwischen Geräten – dann Isolation im Router deaktivieren oder beide Geräte
   per LAN verbinden.
+
+---
+
+# Bravia optimieren & härten (`bravia_harden.py`)
+
+Für den Fall „der TV hat seit Jahren keine Updates bekommen": Schicht für
+Schicht entschlacken und die Angriffsfläche reduzieren – über die gleiche
+ADB-Verbindung.
+
+> **Voraussetzung:** Der Bravia muss ein **Android TV** sein (ca. ab Modelljahr
+> 2015). Pre-2015-Bravia laufen auf Sonys altem Linux/Opera-System **ohne ADB** –
+> dort greift dieses Tool nicht. Prüfen: `firetv_bravia_connect.py connect <ip>`;
+> klappt die ADB-Verbindung, ist es Android TV.
+
+## Sicherheitsprinzipien
+
+- **DRY-RUN ist Standard.** Jeder Befehl zeigt zunächst nur, *was* er täte.
+  Echte Änderungen erst mit `--apply`.
+- **Alles reversibel.** `pm disable-user` / `uninstall --user 0` lässt sich per
+  `enable` / `install-existing` zurückholen. Kein Root, kein Flashen.
+- **Harte Sperrliste.** Kritische System-Pakete (SystemUI, Settings, Launcher,
+  WebView, Play-Services-Kern, Sony-TV-Framework …) werden nie angefasst – nur
+  mit `--force`, und mit deutlicher Warnung.
+
+## Was es NICHT tut (bewusst)
+
+| Wunsch | Warum nicht |
+|--------|-------------|
+| Service-Menü öffnen | Nur per Fernbedienungs-Code, nicht übers Netz. Kann Panel/Weißabgleich zerstören → nur Warnhinweis. |
+| „Treiber ziehen" | Auf SoC-TVs gibt es keine austauschbaren Treiber – kein realer Hebel. |
+| WLAN am Router härten | Das ist Router-Sache. `wlan` liefert dafür eine Checkliste. |
+
+## Ablauf – Schicht für Schicht
+
+```bash
+# 0. Verbinden (siehe oben)
+python3 firetv_bravia_connect.py connect 192.168.178.42
+
+# 1. Inventur: Gerät, Security-Patch-Level, klassifizierte Pakete, Settings
+python3 bravia_harden.py audit
+
+# 2. Alte/ungenutzte Apps ansehen und entfernen (reversibel, dry-run zuerst)
+python3 bravia_harden.py apps --list
+python3 bravia_harden.py apps --uninstall com.netflix.ninja,com.spotify.tv.android
+python3 bravia_harden.py apps --uninstall com.netflix.ninja,com.spotify.tv.android --apply
+#   Zurückholen:
+python3 bravia_harden.py apps --restore com.netflix.ninja --apply
+
+# 3. Telemetrie/Tracking abschalten + Datenschutz-Checkliste
+python3 bravia_harden.py privacy --disable-telemetry --apply
+
+# 4. Unnötige Funk-Dienste (z.B. Bluetooth, falls keine BT-Fernbedienung)
+python3 bravia_harden.py services --disable-bluetooth --apply
+
+# 5. WLAN/Netzwerk router-seitig härten (Checkliste, ändert nichts am TV)
+python3 bravia_harden.py wlan
+
+# 6. Zum Schluss: Netzwerk-ADB wieder zu (Angriffsfläche schließen)
+python3 bravia_harden.py lockdown --apply
+```
+
+## Paket-Klassifizierung
+
+`audit` / `apps --list` lesen die real installierten Pakete aus und ordnen sie ein:
+
+| Kategorie   | Bedeutung |
+|-------------|-----------|
+| `critical`  | Sperrliste – nie automatisch anfassen. |
+| `keep`      | System, nicht kritisch, unauffällig – bleibt. |
+| `optional`  | Vorinstallierte/installierte Apps (Netflix, Spotify …) – frei entfernbar. |
+| `telemetry` | Namensmuster deutet auf Tracking/Ads/Analytics – Kandidat zum Abschalten. |
+
+Deine Haupt-Ziele für „alte Programme runter" sind die `optional`-Apps.
+
+## Reversibilität / Notfall
+
+- App versehentlich entfernt → `apps --restore <pkg> --apply`.
+- App deaktiviert → `apps --enable <pkg> --apply`.
+- Alles zurücksetzen → am TV Werksreset (letzte Instanz).
+- **Nie** `--force` gegen Sperrlisten-Pakete verwenden, außer du weißt genau,
+  was das Paket ist – das kann den TV soft-bricken.
