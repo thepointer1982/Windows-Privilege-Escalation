@@ -101,6 +101,17 @@ Toothpick-SD-Boot (eMMC unangetastet)
                  Original per USB Burning Tool rückspielbar
 ```
 
+## Übergabe / Handoff
+
+Kompletter Übernahmepunkt für Mensch oder Nachfolge-Agent:
+**[HANDOFF.md](HANDOFF.md)** — verbindet alle Artefakte, Status (erledigt vs.
+offen) und den genauen nächsten Schritt.
+
+Helfer-Skripte:
+- `collect-readonly.sh` — read-only Evidenz (PC/adb).
+- `verify-image.sh` — Hash-/PGP-Prüfung des Images (PC).
+- `backup-emmc.sh` — Phase-0 eMMC-Voll-Dump (im SD-Linux, nur lesend).
+
 ## Nutzung des Sammelskripts
 
 ```sh
