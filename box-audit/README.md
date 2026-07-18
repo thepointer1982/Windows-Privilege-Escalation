@@ -112,6 +112,12 @@ Das Skript ist reine Lektüre (getprop, /proc, device-tree, Paket-/Settings-
 Abfragen, Listen der by-name-Symlinks). Es liest **keine** Blockgeräte und
 schreibt **nichts** auf die Box.
 
+## eMMC-Install (Ziel: Linux fest in der eMMC)
+
+Vollständiges A-bis-Z-Runbook: **[INSTALL-eMMC.md](INSTALL-eMMC.md)**.
+Achtung: überschreibt eMMC-Inhalt. Dual-Boot via `ceemmc` erhält Android als
+Notfallbasis; Phase 0 (Rücksetz-Versicherung) ist Pflicht vor jedem Write.
+
 ## Offen, in dieser Reihenfolge
 
 1. Recovery-Boden sichern (Original-IMG + Kenntnis MaskROM/USB Burning Tool).
