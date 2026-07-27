@@ -409,9 +409,58 @@ def cmd_audit(args) -> int:
     return 0
 
 
+def _ai_classify(serial: str) -> int:
+    """Lässt die KI die mehrdeutigen 'keep'-Systempakete einordnen (beratend)."""
+    try:
+        import bravia_ai
+    except ImportError:
+        err("bravia_ai.py nicht im Pfad.")
+        return 3
+
+    pkgs = classify_packages(serial)
+    # Nur die mehrdeutigen: System, nicht kritisch, unauffällig.
+    unknown = [p["package"] for p in pkgs if p["category"] == "keep"]
+    if not unknown:
+        ok("Keine mehrdeutigen 'keep'-Pakete zum Klassifizieren.")
+        return 0
+    info(f"Sende {len(unknown)} unbekannte Paketnamen an Claude "
+         f"({bravia_ai.AI_MODEL}) — nur Paketnamen, keine identifizierenden Daten.")
+    try:
+        results = bravia_ai.classify_packages(unknown)
+    except bravia_ai.AiUnavailable as e:
+        err(str(e))
+        return 3
+    except RuntimeError as e:
+        err(str(e))
+        return 1
+    if not results:
+        warn("KI lieferte keine verwertbare Klassifizierung.")
+        return 1
+
+    by_cat: dict[str, list[dict]] = {}
+    for r in results:
+        by_cat.setdefault(r["category"], []).append(r)
+    for cat in ("telemetry", "optional", "keep", "critical"):
+        items = by_cat.get(cat, [])
+        if not items:
+            continue
+        print(_c(f"\n[{cat.upper()}] ({len(items)})", "1"))
+        for r in items:
+            print(f"  {r['package']}")
+            if r.get("reason"):
+                print(f"      → {r['reason']}")
+    print()
+    warn("Nur KI-Einschätzung, beratend. Nichts wurde geändert. Vor dem Entfernen "
+         "prüfen; System-/Framework-Pakete im Zweifel behalten.")
+    return 0
+
+
 def cmd_apps(args) -> int:
     serial = resolve_serial(args.serial)
     ensure_android_tv(serial)
+
+    if args.ai_classify:
+        return _ai_classify(serial)
 
     if args.recommend:
         pkgs = classify_packages(serial)
@@ -674,6 +723,9 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--list", action="store_true", help="Kandidaten klassifiziert listen")
     sp.add_argument("--recommend", action="store_true",
                     help="Kuratierte Entfernen-Empfehlung (nur installierte)")
+    sp.add_argument("--ai-classify", action="store_true",
+                    help="KI ordnet mehrdeutige Systempakete ein (beratend; "
+                         "braucht anthropic-SDK + API-Key)")
     sp.add_argument("--disable", help="Komma-Liste: per Nutzer deaktivieren (reversibel)")
     sp.add_argument("--enable", help="Komma-Liste: wieder aktivieren")
     sp.add_argument("--uninstall", help="Komma-Liste: für Nutzer entfernen (reversibel)")

@@ -33,9 +33,7 @@ import json
 import sys
 from dataclasses import dataclass, field, asdict
 
-# Modell für die optionale KI-Zweitmeinung. Opus 4.8 ist der sinnvolle Default
-# fuer eine einmalige Analyse-Anfrage.
-AI_MODEL = "claude-opus-4-8"
+# Die optionale KI-Zweitmeinung läuft über das gemeinsame Modul bravia_ai.
 
 SEVERITY_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4}
 # Punktabzug vom Score (Start 100) je Befund-Schwere.
@@ -231,11 +229,7 @@ def _redacted_summary(audit: dict, findings: list[Finding], score: int) -> str:
 
 def ai_second_opinion(summary: str) -> str:
     """Schickt die Zusammenfassung an Claude. Braucht anthropic-SDK + API-Key."""
-    try:
-        import anthropic
-    except ImportError:
-        return ("(KI-Modus übersprungen: anthropic-SDK nicht installiert. "
-                "`pip install anthropic` und ANTHROPIC_API_KEY setzen.)")
+    import bravia_ai
 
     prompt = (
         "Du bist ein Security-Berater für Heimnetz-Geräte. Unten stehen die "
@@ -247,15 +241,11 @@ def ai_second_opinion(summary: str) -> str:
         + summary
     )
     try:
-        client = anthropic.Anthropic()
-        resp = client.messages.create(
-            model=AI_MODEL,
-            max_tokens=1200,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        return "".join(b.text for b in resp.content if getattr(b, "type", "") == "text").strip()
-    except Exception as e:  # noqa: BLE001 - dem Nutzer die Ursache zeigen
-        return f"(KI-Modus fehlgeschlagen: {e})"
+        return bravia_ai.ask(prompt, max_tokens=1200)
+    except bravia_ai.AiUnavailable as e:
+        return f"(KI-Modus übersprungen: {e})"
+    except RuntimeError as e:
+        return f"({e})"
 
 
 # --------------------------------------------------------------------------- #

@@ -229,6 +229,27 @@ python3 bravia_harden.py wlan
 python3 bravia_harden.py lockdown --apply
 ```
 
+## KI-gestützte Paket-Klassifizierung (optional)
+
+Die vielen kryptischen OEM-Pakete (`com.sony.dtv.*` u. a.) sind für die
+Heuristik oft weder eindeutig kritisch noch eindeutig Bloatware und landen im
+`keep`-Topf. `apps --ai-classify` lässt **Claude** genau diese mehrdeutigen
+Pakete einordnen (critical / keep / optional / telemetry) samt kurzer
+Begründung:
+
+```bash
+python3 bravia_harden.py apps --ai-classify
+```
+
+- **Rein beratend** – es wird nichts geändert; du entscheidest.
+- **Datensparsam** – es werden nur **Paketnamen** gesendet, keine Hostnames/IPs.
+- Braucht das `anthropic`-SDK + API-Key (`pip install anthropic`,
+  `ANTHROPIC_API_KEY` oder `ant auth login`). Ohne das bleibt das Tool
+  abhängigkeitsfrei und meldet den fehlenden Key sauber.
+
+Die gemeinsame KI-Anbindung liegt in `bravia_ai.py` (wird auch von
+`bravia_advisor.py --ai` genutzt).
+
 ## Paket-Klassifizierung
 
 `audit` / `apps --list` lesen die real installierten Pakete aus und ordnen sie ein:
@@ -283,6 +304,7 @@ Die Logik ist ohne echtes Gerät testbar – der ADB-Layer wird gemockt:
 ```bash
 python3 test_bravia_harden.py       # Härtungs-Tool (11 Tests)
 python3 test_bravia_advisor.py      # Advisor-Offline-Engine (8 Tests)
+python3 test_bravia_ai.py           # KI-Modul: Prompt/Parse (9 Tests, ohne Netz)
 # oder: pytest
 ```
 
