@@ -304,7 +304,7 @@ typisch im kritischen Bereich (< 40).
 Die Logik ist ohne echtes Gerät testbar – der ADB-Layer wird gemockt:
 
 ```bash
-python3 test_bravia_harden.py       # Härtungs-Tool (11 Tests)
+python3 test_bravia_harden.py       # Härtungs-Tool (16 Tests)
 python3 test_bravia_advisor.py      # Advisor-Offline-Engine (8 Tests)
 python3 test_bravia_ai.py           # KI-Modul: Prompt/Parse (9 Tests, ohne Netz)
 # oder: pytest

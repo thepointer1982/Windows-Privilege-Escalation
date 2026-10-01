@@ -320,6 +320,29 @@ ACTIONS = {
 }
 
 
+def _command_succeeded(out: str) -> bool:
+    """Bewertet die Ausgabe eines pm/cmd/svc-Kommandos.
+
+    Erkennt Fehler an deren Markern statt einer Erfolgs-Whitelist, weil die
+    Erfolgs-Ausgaben je nach Kommando unterschiedlich sind:
+      pm uninstall --user 0  -> "Success"
+      pm disable-user         -> "Package X new state: disabled-user"
+      pm enable               -> "Package X new state: enabled"
+      install-existing        -> "Package X installed for user: 0"
+      (manche Kommandos)      -> leere Ausgabe
+    Fehler sehen z.B. so aus: "Failure [NOT_INSTALLED...]", "Error: ...",
+    "java.lang...Exception", "Unknown package", "not installed for user 0".
+    """
+    low = out.strip().lower()
+    if not low:
+        return True
+    if low.startswith(("failure", "error")):
+        return False
+    if any(m in low for m in ("exception", "unknown package", "not installed for")):
+        return False
+    return True
+
+
 def apply_action(serial: str, action: str, packages: list[str],
                  apply: bool, force: bool) -> int:
     template, human = ACTIONS[action]
@@ -338,7 +361,7 @@ def apply_action(serial: str, action: str, packages: list[str],
             print(f"  würde ausführen: adb shell {cmd}")
             continue
         out = shell(serial, cmd, timeout=30).strip()
-        success = ("Success" in out) or (out == "") or ("enabled" in out.lower())
+        success = _command_succeeded(out)
         if success:
             ok(f"  {pkg}: {out or 'ok'}")
         else:

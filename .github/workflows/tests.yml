@@ -39,7 +39,7 @@ jobs:
             firetv_bravia_connect.py bravia_harden.py bravia_advisor.py bravia_ai.py \
             test_bravia_harden.py test_bravia_advisor.py test_bravia_ai.py
 
-      - name: Härtungs-Tool (11 Tests)
+      - name: Härtungs-Tool (16 Tests)
         run: python test_bravia_harden.py
 
       - name: Advisor-Offline-Engine (8 Tests)

@@ -61,8 +61,20 @@ class FakeShell:
             return "".join(f"package:{p}\n" for p in FAKE_PACKAGES_ALL)
         if cmd.startswith("settings get"):
             return "1\n"
-        if cmd.startswith(("pm ", "cmd ", "svc ")):
+        # Realistische pm/cmd-Ausgaben (NICHT stur "Success" – das verdeckt Bugs).
+        if cmd.startswith("pm disable-user"):
+            pkg = cmd.split()[-1]
+            return f"Package {pkg} new state: disabled-user\n"
+        if cmd.startswith("pm enable"):
+            pkg = cmd.split()[-1]
+            return f"Package {pkg} new state: enabled\n"
+        if cmd.startswith("pm uninstall"):
             return "Success\n"
+        if cmd.startswith("cmd package install-existing"):
+            pkg = cmd.split()[-1]
+            return f"Package {pkg} installed for user: 0\n"
+        if cmd.startswith("svc "):
+            return "\n"
         return "\n"
 
 
@@ -158,6 +170,48 @@ class ActionTests(unittest.TestCase):
                              apply=True, force=False)
         self.assertEqual(rc, 0)
         self.assertIn("pm uninstall --user 0 com.netflix.ninja", self.fake.calls)
+
+    def test_disable_reports_success_on_realistic_output(self):
+        # Regression: 'disable-user' gibt "... new state: disabled-user" aus;
+        # das wurde früher fälschlich als Fehler (rc=1) gewertet.
+        rc = bh.apply_action("dev", "disable", ["com.netflix.ninja"],
+                             apply=True, force=False)
+        self.assertEqual(rc, 0)
+
+    def test_restore_reports_success_on_realistic_output(self):
+        # Regression: install-existing gibt "Package X installed for user: 0".
+        rc = bh.apply_action("dev", "restore", ["com.netflix.ninja"],
+                             apply=True, force=False)
+        self.assertEqual(rc, 0)
+
+
+class CommandSucceededTests(unittest.TestCase):
+    def test_success_outputs(self):
+        for out in (
+            "Success",
+            "",
+            "   \n",
+            "Package com.x new state: disabled-user",
+            "Package com.x new state: enabled",
+            "Package com.x installed for user: 0",
+        ):
+            self.assertTrue(bh._command_succeeded(out), out)
+
+    def test_failure_outputs(self):
+        for out in (
+            "Failure [DELETE_FAILED_INTERNAL_ERROR]",
+            "Failure [not installed for 0]",
+            "Error: package not found",
+            "java.lang.IllegalArgumentException: Unknown package: com.x",
+            "Package com.x not installed for user 0",
+        ):
+            self.assertFalse(bh._command_succeeded(out), out)
+
+    def test_package_name_with_error_substring_not_false_positive(self):
+        # Ein Paketname, der zufällig 'error' enthält, darf Erfolg nicht kippen,
+        # weil die Erfolgsausgabe mit "Package " beginnt.
+        self.assertTrue(
+            bh._command_succeeded("Package com.errorlog new state: disabled-user"))
 
 
 if __name__ == "__main__":
