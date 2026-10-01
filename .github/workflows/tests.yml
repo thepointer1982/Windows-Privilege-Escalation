@@ -1,0 +1,49 @@
+name: fire-tv-bravia tests
+
+# Führt die Test-Suiten und einen Syntax-Check für die Fire-TV-/Bravia-Tools
+# aus. Die Tests kommen ohne echtes Gerät und ohne externe Abhängigkeiten aus
+# (der ADB-Layer und die KI-Anbindung werden gemockt bzw. sauber übersprungen).
+
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "fire-tv-bravia/**"
+      - ".github/workflows/tests.yml"
+  pull_request:
+    paths:
+      - "fire-tv-bravia/**"
+      - ".github/workflows/tests.yml"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.9", "3.11", "3.12"]
+    defaults:
+      run:
+        working-directory: fire-tv-bravia
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Syntax check (alle Module)
+        run: |
+          python -m compileall -q \
+            firetv_bravia_connect.py bravia_harden.py bravia_advisor.py bravia_ai.py \
+            test_bravia_harden.py test_bravia_advisor.py test_bravia_ai.py
+
+      - name: Härtungs-Tool (11 Tests)
+        run: python test_bravia_harden.py
+
+      - name: Advisor-Offline-Engine (8 Tests)
+        run: python test_bravia_advisor.py
+
+      - name: KI-Modul (9 Tests, ohne Netz)
+        run: python test_bravia_ai.py

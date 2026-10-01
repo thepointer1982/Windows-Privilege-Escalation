@@ -1,5 +1,7 @@
 # Fire TV ↔ Sony Bravia – Netzwerkverbindung
 
+[![tests](https://github.com/thepointer1982/Windows-Privilege-Escalation/actions/workflows/tests.yml/badge.svg)](https://github.com/thepointer1982/Windows-Privilege-Escalation/actions/workflows/tests.yml)
+
 Netzwerk- und Diagnose-Tool, um über einen Fire-TV-Stick am Sony-Bravia-Fernseher
 die Verbindung im Heimnetz herzustellen und zu prüfen.
 
@@ -307,6 +309,10 @@ python3 test_bravia_advisor.py      # Advisor-Offline-Engine (8 Tests)
 python3 test_bravia_ai.py           # KI-Modul: Prompt/Parse (9 Tests, ohne Netz)
 # oder: pytest
 ```
+
+Diese Suiten laufen auch automatisch in **GitHub Actions** (Python 3.9/3.11/3.12)
+bei jedem Push/PR, der `fire-tv-bravia/` berührt – siehe
+`.github/workflows/tests.yml` und den Badge oben.
 
 ## Reversibilität / Notfall
 
