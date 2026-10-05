@@ -34,7 +34,13 @@ echo "Image-SHA256: $ACTUAL"
 
 if [ -f "$EXPECT" ]; then
     # EXPECT ist eine SHA256SUMS-Datei: passende Zeile suchen.
-    WANT="$(grep -iE "([0-9a-f]{64})[[:space:]]+[*]?$(basename "$IMG")\$" "$EXPECT" 2>/dev/null | awk '{print $1}' | head -n1)"
+    # Dateinamen LITERAL vergleichen (nicht als Regex interpolieren, sonst
+    # matcht z. B. '.' jedes Zeichen). awk trennt Hash ($1) und Name ($2,
+    # fuehrendes '*' des Binaer-Markers entfernt).
+    WANT="$(awk -v f="$(basename "$IMG")" '
+        { name=$2; sub(/^[*]/,"",name) }
+        name==f && $1 ~ /^[0-9a-fA-F]{64}$/ { print tolower($1); exit }
+    ' "$EXPECT" 2>/dev/null)"
     if [ -z "$WANT" ]; then
         echo "FEHLER: kein passender Eintrag für '$(basename "$IMG")' in '$EXPECT'." >&2
         exit 2
@@ -65,12 +71,20 @@ if [ -n "$SIG" ]; then
     echo "Prüfe Signatur '$SIG' über '$SIGNED_TARGET' ..."
     if gpg --verify "$SIG" "$SIGNED_TARGET" 2>&1 | tee /tmp/verify-gpg.$$ ; then
         if [ -n "$KEYREF" ]; then
-            if grep -qiE "$(printf '%s' "$KEYREF" | sed 's/^0x//; s/ //g')" /tmp/verify-gpg.$$; then
-                echo "STUFE 2 OK: Signatur gültig und Fingerprint passt."
-            else
-                echo "STUFE 2 WARNUNG: Signatur gültig, aber Fingerprint '$KEYREF' nicht bestätigt -- prüfen!" >&2
-                rm -f /tmp/verify-gpg.$$; exit 5
-            fi
+            # Fingerprint-Abgleich auf BEIDEN Seiten normalisieren: Leerzeichen/
+            # Tabs und ein fuehrendes 0x entfernen, Gross-/Kleinschreibung
+            # angleichen. gpg gibt den Fingerprint in 4er-Gruppen mit
+            # Leerzeichen aus -- ohne diese Normalisierung schlug der Abgleich
+            # auch bei korrektem Schluessel fehl.
+            norm_out="$(tr -d ' \t' < /tmp/verify-gpg.$$ | tr 'A-F' 'a-f')"
+            norm_key="$(printf '%s' "$KEYREF" | sed 's/^0[xX]//' | tr -d ' \t' | tr 'A-F' 'a-f')"
+            case "$norm_out" in
+                *"$norm_key"*)
+                    echo "STUFE 2 OK: Signatur gültig und Fingerprint passt." ;;
+                *)
+                    echo "STUFE 2 WARNUNG: Signatur gültig, aber Fingerprint '$KEYREF' nicht bestätigt -- prüfen!" >&2
+                    rm -f /tmp/verify-gpg.$$; exit 5 ;;
+            esac
         else
             echo "STUFE 2 OK: Signatur gültig (kein Fingerprint zum Abgleich angegeben)."
         fi

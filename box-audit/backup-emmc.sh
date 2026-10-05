@@ -48,13 +48,31 @@ fi
 
 # --- Schutz: Ausgabe darf nicht auf der eMMC liegen --------------------------
 OUT_SRC="$(df -P "$OUTDIR" 2>/dev/null | awk 'NR==2{print $1}')"
+# Praezise auf das eMMC-Geraet und seine Partitionen/Bereiche pruefen.
+# (Loses '${EMMC}*' wuerde '/dev/mmcblk1' auch gegen '/dev/mmcblk11' matchen.)
 case "$OUT_SRC" in
-    ${EMMC}*)
+    "$EMMC"|"$EMMC"p*|"$EMMC"boot*|"$EMMC"rpmb)
         echo "ABBRUCH: Ausgabeverzeichnis liegt auf der eMMC ($OUT_SRC)." >&2
         echo "Ein externes Medium (USB/SD) als Ziel angeben." >&2
         exit 1
         ;;
 esac
+
+# --- Schutz: genug Platz auf dem Zielmedium? --------------------------------
+# Ein Roh-Dump ist exakt so gross wie die eMMC. Vor dem langen dd pruefen,
+# damit der Lauf nicht nach Stunden am vollen Ziel scheitert.
+EMMC_NAME="$(basename "$EMMC")"
+if [ -r "/sys/class/block/$EMMC_NAME/size" ]; then
+    NEED="$(( $(cat "/sys/class/block/$EMMC_NAME/size") * 512 ))"
+    FREE="$(df -P -k "$OUTDIR" 2>/dev/null | awk 'NR==2{print $4 * 1024}')"
+    if [ -n "$FREE" ] && [ "$NEED" -gt 0 ] && [ "$FREE" -lt "$NEED" ]; then
+        echo "ABBRUCH: Zu wenig Platz auf dem Ziel." >&2
+        echo "  eMMC-Groesse : $NEED Bytes" >&2
+        echo "  frei auf Ziel: $FREE Bytes" >&2
+        echo "Groesseres externes Medium verwenden." >&2
+        exit 1
+    fi
+fi
 
 STAMP="$(date -u '+%Y%m%d-%H%M%S')"
 IMG="$OUTDIR/emmc-full-$STAMP.img"
