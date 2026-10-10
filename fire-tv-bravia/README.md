@@ -304,10 +304,11 @@ typisch im kritischen Bereich (< 40).
 Die Logik ist ohne echtes Gerät testbar – der ADB-Layer wird gemockt:
 
 ```bash
+python3 test_firetv_connect.py      # Verbindungs-/Scan-Tool (19 Tests)
 python3 test_bravia_harden.py       # Härtungs-Tool (16 Tests)
 python3 test_bravia_advisor.py      # Advisor-Offline-Engine (8 Tests)
 python3 test_bravia_ai.py           # KI-Modul: Prompt/Parse (9 Tests, ohne Netz)
-# oder: pytest
+# oder: python3 -m unittest discover -p 'test_*.py'  (52 Tests)  bzw. pytest
 ```
 
 Diese Suiten laufen auch automatisch in **GitHub Actions** (Python 3.9/3.11/3.12)

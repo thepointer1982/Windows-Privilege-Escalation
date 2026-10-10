@@ -183,22 +183,24 @@ def reverse_dns(ip: str) -> str | None:
         return None
 
 
-def scan_host(ip: str, ports: Iterable[int], timeout: float) -> Host | None:
-    """Prueft einen Host: erst offene Ports, sonst Ping. Nur 'interessante'
-    Hosts (erreichbar oder mit offenem Port) werden zurueckgegeben."""
+def build_host(ip: str, open_ports: Iterable[int]) -> Host:
+    """Baut aus IP + offenen Ports einen klassifizierten Host (inkl. Reverse-DNS)."""
     host = Host(ip=ip)
-    for port in ports:
-        if probe_port(ip, port, timeout):
-            host.open_ports.append(port)
-    if host.open_ports:
-        host.reachable = True
-    else:
-        host.reachable = ping(ip, timeout)
-    if not host.reachable:
-        return None
+    host.open_ports = list(open_ports)
+    host.reachable = True
     host.hostname = reverse_dns(ip)
     classify(host)
     return host
+
+
+def scan_host(ip: str, ports: Iterable[int], timeout: float) -> Host | None:
+    """Prueft einen einzelnen Host: erst offene Ports, sonst Ping. Nur
+    'interessante' Hosts (erreichbar oder mit offenem Port) kommen zurueck."""
+    ordered = list(ports)
+    open_ports = [p for p in ordered if probe_port(ip, p, timeout)]
+    if not open_ports and not ping(ip, timeout):
+        return None
+    return build_host(ip, open_ports)
 
 
 def scan_subnet(
@@ -207,19 +209,48 @@ def scan_subnet(
     timeout: float,
     workers: int,
 ) -> list[Host]:
-    """Parallel-Scan ueber alle Hosts eines Subnetzes."""
+    """Parallel-Scan ueber alle Hosts eines Subnetzes.
+
+    Statt je Host alle Ports seriell zu proben (ein toter Host blockierte einen
+    Worker fuer `len(ports) * timeout`), wird flach ueber alle (IP, Port)-Paare
+    parallelisiert. Jede Aufgabe ist damit durch genau ein `timeout` begrenzt,
+    Worker bleiben ausgelastet und ein langsamer Host bremst den Scan nicht aus.
+    """
     hosts_to_scan = [str(h) for h in network.hosts()]
     info(f"Scanne {len(hosts_to_scan)} Adressen in {network} "
          f"(Ports: {', '.join(map(str, ports))}) ...")
-    found: list[Host] = []
+
+    # Phase 1: alle (IP, Port)-Proben parallel; offene Ports je IP sammeln.
+    open_by_ip: dict[str, set[int]] = {}
     with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
         futures = {
-            pool.submit(scan_host, ip, ports, timeout): ip for ip in hosts_to_scan
+            pool.submit(probe_port, ip, port, timeout): (ip, port)
+            for ip in hosts_to_scan
+            for port in ports
         }
         for fut in concurrent.futures.as_completed(futures):
-            host = fut.result()
-            if host:
-                found.append(host)
+            ip, port = futures[fut]
+            if fut.result():
+                open_by_ip.setdefault(ip, set()).add(port)
+
+    # Phase 2: Hosts ohne offenen Port per Ping pruefen (ebenfalls parallel).
+    no_open = [ip for ip in hosts_to_scan if ip not in open_by_ip]
+    pinged: set[str] = set()
+    if no_open:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = {pool.submit(ping, ip, timeout): ip for ip in no_open}
+            for fut in concurrent.futures.as_completed(futures):
+                if fut.result():
+                    pinged.add(futures[fut])
+
+    # Phase 3: erreichbare Hosts bauen (offene Ports in Eingabereihenfolge).
+    found: list[Host] = []
+    for ip in hosts_to_scan:
+        if ip in open_by_ip:
+            open_ports = [p for p in ports if p in open_by_ip[ip]]
+            found.append(build_host(ip, open_ports))
+        elif ip in pinged:
+            found.append(build_host(ip, []))
     found.sort(key=lambda h: tuple(int(o) for o in h.ip.split(".")))
     return found
 

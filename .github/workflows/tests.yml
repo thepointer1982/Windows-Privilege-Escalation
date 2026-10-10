@@ -37,7 +37,10 @@ jobs:
         run: |
           python -m compileall -q \
             firetv_bravia_connect.py bravia_harden.py bravia_advisor.py bravia_ai.py \
-            test_bravia_harden.py test_bravia_advisor.py test_bravia_ai.py
+            test_firetv_connect.py test_bravia_harden.py test_bravia_advisor.py test_bravia_ai.py
+
+      - name: Verbindungs-/Scan-Tool (19 Tests)
+        run: python test_firetv_connect.py
 
       - name: Härtungs-Tool (16 Tests)
         run: python test_bravia_harden.py
